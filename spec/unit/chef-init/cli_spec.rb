@@ -55,7 +55,7 @@ describe ChefInit::CLI do
       cli.run
     end
 
-    context "when onboot flag is passed" do
+    context "when --onboot flag is passed" do
       let(:argv) { %w[ --onboot ] }
 
       it "should launch onboot steps" do
@@ -64,11 +64,22 @@ describe ChefInit::CLI do
       end
     end
 
-    context "when bootstrap flag is passed" do
+    context "when --bootstrap flag is passed" do
       let(:argv) { %w[ --bootstrap ] }
 
       it "should launch build steps" do
         expect(cli).to receive(:launch_bootstrap)
+        cli.run
+      end
+    end
+
+    context "when --verify flag is passed" do
+      let(:argv) { %w[ --verify ] }
+      let(:verify) { double("ChefInit::Verify", run: nil) }
+
+      it "should run a verification process" do
+        ChefInit::Verify.stub(:new).and_return(verify)
+        expect(verify).to receive(:run)
         cli.run
       end
     end
@@ -110,7 +121,7 @@ describe ChefInit::CLI do
       it "alerts that you must pass in a flag or arguments" do
         expect(cli).to receive(:exit).with(1)
         cli.handle_options
-        expect(stderr).to eql("You must pass in either the --onboot or --bootstrap flag.\n")
+        expect(stderr).to eql("You must pass in one of the following flags: --onboot, --bootstrap or --verify.\n")
       end
     end
 
@@ -142,7 +153,7 @@ describe ChefInit::CLI do
       end
     end
 
-    context "client-mode files already exists" do
+    context "server-mode files already exists" do
       let(:argv) { %w[ --onboot ] }
 
       before do
@@ -177,7 +188,7 @@ describe ChefInit::CLI do
         File.stub(:exist?).with("/etc/chef/client.rb").and_return(true)
       end
 
-      it "sets client-mode defaults" do
+      it "sets server-mode defaults" do
         expect(cli).to receive(:set_server_mode_defaults)
         cli.set_default_options
       end
@@ -194,7 +205,7 @@ describe ChefInit::CLI do
   end
 
   describe "#set_server_mode_defaults" do
-    it "should set defaults typical for client-mode runs" do
+    it "should set defaults typical for server-mode runs" do
       cli.set_server_mode_defaults
       expect(cli.config[:local_mode]).to eql(false)
       expect(cli.config[:config_file]).to eql("/etc/chef/client.rb")
@@ -204,6 +215,7 @@ describe ChefInit::CLI do
 
   describe "#launch_onboot" do
     let(:supervisor_pid) { 1000 }
+    let(:signals) { Signal.list }
 
     before do
       cli.stub(:print_welcome)
@@ -244,25 +256,13 @@ describe ChefInit::CLI do
       cli.launch_onboot
     end
 
-    it "should catch Kernel signals" do
-      expect(Signal).to receive(:trap).with("TERM")
-      expect(Signal).to receive(:trap).with("HUP")
-      expect(cli).to receive(:exit).with(0)
-      cli.launch_onboot
+    it "should forward SIGTERM as a SIGHUP" do
+      # TODO
     end
 
-    it "should forward Kernel signals to supervisor process" do
-      expect(Process).to receive(:kill).with("TERM", anything)
-      pid1 = fork do
-        cli.launch_onboot
-      end
-      Process.kill("TERM", pid1)
-
-      expect(Process).to receive(:kill).with("HUP", anything)
-      pid2 = fork do
-        cli.launch_onboot
-      end
-      Process.kill("HUP", pid2)
+    # SIGKILL specifically
+    it "should forward SIGKILL as a SIGTERM" do
+      # TODO
     end
 
     it "should wait for supervisor to exit" do
@@ -365,10 +365,6 @@ describe ChefInit::CLI do
       cli.stub(:chef_client_command) { "chef-client -c /etc/chef/client.rb -j /etc/chef/first-boot.json" }
       expect(Open3).to receive(:popen2e).with(env, "chef-client -c /etc/chef/client.rb -j /etc/chef/first-boot.json")
       cli.run_chef_client
-    end
-
-    it "should forward stdout from subprocess to main stdout" do
-
     end
   end
 

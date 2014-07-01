@@ -17,6 +17,7 @@
 
 require 'chef-init/version'
 require 'chef-init/helpers'
+require 'chef-init/verify'
 require 'mixlib/cli'
 require 'open3'
 
@@ -48,15 +49,18 @@ module ChefInit
 
     option :bootstrap,
       :long         => "--bootstrap",
-      :description  => "",
-      :boolean      => true,
-      :default      => false
+      :description  => "Launch runit, run chef-client and then exit runit.",
+      :boolean      => true
 
     option :onboot,
       :long         => "--onboot",
-      :description  => "",
-      :boolean      => true,
-      :default      => false
+      :description  => "Launch runit, run chef-client and then keep runit alive.",
+      :boolean      => true
+
+    option :verify,
+      :long         => "--verify",
+      :description  => "Verify installation",
+      :boolean      => true
 
     option :log_level,
       :short        => "-l LEVEL",
@@ -68,18 +72,6 @@ module ChefInit
       :short        => "-E ENVRIONMENT",
       :long         => "--environment",
       :description  => "Set the Chef Environment on the node"
-
-    option :onboot,
-      :long => "--onboot",
-      :description => "",
-      :boolean => true,
-      :default => false
-
-    option :log_level,
-      :short        => "-l LEVEL",
-      :long         => "--log_level LEVEL",
-      :description  => "Set the log level (debug, info, warn, error, fatal)",
-      :default      => "info"
 
     option :version,
       :short        => "-v",
@@ -99,6 +91,9 @@ module ChefInit
         launch_onboot
       elsif config[:bootstrap]
         launch_bootstrap
+      elsif config[:verify]
+        verify = ChefInit::Verify.new
+        verify.run
       end
     end
 
@@ -113,8 +108,8 @@ module ChefInit
         msg "ChefInit Version: #{ChefInit::VERSION}"
         exit 0
       else
-        unless config[:onboot] || config[:bootstrap] || !cli_arguments.empty?
-          err "You must pass in either the --onboot or --bootstrap flag."
+        unless config[:onboot] || config[:bootstrap] || config[:verify]
+          err "You must pass in one of the following flags: --onboot, --bootstrap or --verify."
           exit 1
         end
 
@@ -167,15 +162,15 @@ module ChefInit
       Process.wait(@chef_client)
       delete_validation_key
 
-      # Catch TERM signal and foward to supervisor
-      Signal.trap("TERM") do
-        ChefInit::Log.info("Received SIGTERM - shutting down supervisor...\n\nGoodbye!")
+      # Catch KILL signal and foward TERM to supervisor
+      Signal.trap("KILL") do
+        ChefInit::Log.info("Received SIGKILL - shutting down supervisor forcefully...\n\nGoodbye!")
         Process.kill("TERM", @supervisor)
       end
 
       # Catch HUP signal and forward to supervisor
-      Signal.trap("HUP") do
-        ChefInit::Log.info("Received SIGHUP - shutting down supervisor...\n\nGoodbye!")
+      Signal.trap("TERM") do
+        ChefInit::Log.info("Received SIGTERM - shutting down supervisor gracefully...\n\nGoodbye!")
         Process.kill("HUP", @supervisor)
       end
 
